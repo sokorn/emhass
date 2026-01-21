@@ -17,6 +17,8 @@ import pandas as pd
 from emhass import utils
 from emhass.command_line import (
     SetupContext,
+    _get_closest_index,
+    _load_opt_res_latest,
     _prepare_dayahead_optim,
     adjust_pv_forecast,
     dayahead_forecast_optim,
@@ -1717,6 +1719,74 @@ class TestCommandLineAsyncUtils(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(thermal_config["start_temperature"], 25.5)
         # Verify desired_temperatures override applied (21.0 -> 22.5)
         self.assertEqual(thermal_config["desired_temperatures"], [22.5] * 48)
+
+    async def test_load_opt_res_latest_timezone_handling(self):
+        """Test that _load_opt_res_latest properly handles timezone localization.
+
+        This test verifies that when loading optimization results from CSV,
+        the index is properly timezone-aware so it can be compared with
+        timezone-aware datetime objects in _get_closest_index.
+
+        Regression test for: TypeError: Cannot compare dtypes datetime64[ns]
+        and datetime64[ns, Europe/Berlin]
+        """
+        import pytz
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            data_path = pathlib.Path(tmpdir)
+            time_zone = pytz.timezone("Europe/Berlin")
+            freq = pd.Timedelta(minutes=30)
+
+            # Create a timezone-aware DataFrame (simulating optimization results)
+            idx = pd.date_range(
+                start=pd.Timestamp.now(tz=time_zone).floor(freq),
+                periods=48,
+                freq=freq,
+            )
+            opt_res = pd.DataFrame(
+                {"P_PV": [100.0] * 48, "P_Load": [200.0] * 48},
+                index=idx,
+            )
+
+            # Save to CSV (this strips timezone info in typical pandas behavior)
+            csv_path = data_path / "opt_res_latest.csv"
+            opt_res.to_csv(csv_path, index_label="timestamp")
+
+            # Create minimal input_data_dict for _load_opt_res_latest
+            input_data_dict = {
+                "emhass_conf": {"data_path": data_path},
+                "retrieve_hass_conf": {
+                    "time_zone": time_zone,
+                    "optimization_time_step": freq,
+                    "method_ts_round": "nearest",
+                },
+            }
+
+            # Load the CSV using the function under test
+            loaded_df = _load_opt_res_latest(input_data_dict, logger, save_data_to_file=False)
+
+            # Verify the DataFrame was loaded
+            self.assertIsNotNone(loaded_df)
+            self.assertEqual(len(loaded_df), 48)
+
+            # Verify the index is timezone-aware (this is the key fix)
+            self.assertIsNotNone(
+                loaded_df.index.tz,
+                "Index should be timezone-aware after loading from CSV",
+            )
+
+            # Verify _get_closest_index works without TypeError
+            # This would previously fail with:
+            # TypeError: Cannot compare dtypes datetime64[ns] and datetime64[ns, Europe/Berlin]
+            try:
+                idx_closest = _get_closest_index(
+                    input_data_dict["retrieve_hass_conf"], loaded_df.index
+                )
+                # Should return a valid index (0 to 47)
+                self.assertGreaterEqual(idx_closest, -1)  # -1 means no match found
+                self.assertLess(idx_closest, 48)
+            except TypeError as e:
+                self.fail(f"_get_closest_index raised TypeError: {e}")
 
 
 if __name__ == "__main__":
