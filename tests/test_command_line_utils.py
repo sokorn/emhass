@@ -1737,9 +1737,12 @@ class TestCommandLineAsyncUtils(unittest.IsolatedAsyncioTestCase):
             time_zone = pytz.timezone("Europe/Berlin")
             freq = pd.Timedelta(minutes=30)
 
-            # Create a timezone-aware DataFrame (simulating optimization results)
+            # Create a DataFrame with naive timestamps (simulating the bug scenario)
+            # Use a fixed reference timestamp to keep the test deterministic
+            # The bug occurs when CSV contains naive timestamps without timezone info
+            start = pd.Timestamp("2024-01-01T00:00:00")  # Naive timestamp (no tz)
             idx = pd.date_range(
-                start=pd.Timestamp.now(tz=time_zone).floor(freq),
+                start=start,
                 periods=48,
                 freq=freq,
             )
@@ -1748,7 +1751,7 @@ class TestCommandLineAsyncUtils(unittest.IsolatedAsyncioTestCase):
                 index=idx,
             )
 
-            # Save to CSV (this strips timezone info in typical pandas behavior)
+            # Save to CSV with naive timestamps (this is the actual bug scenario)
             csv_path = data_path / "opt_res_latest.csv"
             opt_res.to_csv(csv_path, index_label="timestamp")
 

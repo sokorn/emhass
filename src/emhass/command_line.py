@@ -1644,8 +1644,9 @@ def _load_opt_res_latest(
     opt_res_latest = pd.read_csv(file_path, index_col="timestamp")
     opt_res_latest.index = pd.to_datetime(opt_res_latest.index)
     # Ensure index is timezone-aware to match _get_closest_index expectations
+    # Localize to UTC first (no DST ambiguity), then convert to target timezone
     if opt_res_latest.index.tz is None:
-        opt_res_latest.index = opt_res_latest.index.tz_localize(
+        opt_res_latest.index = opt_res_latest.index.tz_localize("UTC").tz_convert(
             input_data_dict["retrieve_hass_conf"]["time_zone"]
         )
     opt_res_latest.index.freq = input_data_dict["retrieve_hass_conf"]["optimization_time_step"]
