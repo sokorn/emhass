@@ -2228,9 +2228,7 @@ class Optimization:
                 self.plant_conf.get("battery_discharge_power_max", 0),
                 self.plant_conf.get("battery_charge_power_max", 0),
             )
-            batt_stress_conf = self._setup_stress_cost(
-                "battery_stress_cost", p_batt_max, "battery"
-            )
+            batt_stress_conf = self._setup_stress_cost("battery_stress_cost", p_batt_max, "battery")
 
         if self.plant_conf["inverter_is_hybrid"]:
             P_nom_inverter_max = max(
