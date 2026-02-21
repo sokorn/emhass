@@ -2219,6 +2219,28 @@ class Optimization:
                 self.param_required_timesteps[k].value = 0.0
                 self.param_timesteps_active[k].value = 0.0  # Constraint is relaxed (Big-M)
 
+        # Setup Stress Costs (needed for both initial build and fallback retry)
+        inv_stress_conf = None
+        batt_stress_conf = None
+
+        if self.optim_conf["set_use_battery"]:
+            p_batt_max = max(
+                self.plant_conf.get("battery_discharge_power_max", 0),
+                self.plant_conf.get("battery_charge_power_max", 0),
+            )
+            batt_stress_conf = self._setup_stress_cost(
+                "battery_stress_cost", p_batt_max, "battery"
+            )
+
+        if self.plant_conf["inverter_is_hybrid"]:
+            P_nom_inverter_max = max(
+                self.plant_conf.get("inverter_ac_output_max", 0),
+                self.plant_conf.get("inverter_ac_input_max", 0),
+            )
+            inv_stress_conf = self._setup_stress_cost(
+                "inverter_stress_cost", P_nom_inverter_max, "inv"
+            )
+
         # Build Problem (Lazy Construction)
         if self.prob is None:
             self.logger.info("Building CVXPY problem structure...")
@@ -2226,31 +2248,11 @@ class Optimization:
             # Start with bound constraints
             constraints = self.constraints[:]
 
-            # Setup Stress Costs
-            inv_stress_conf = None
-            batt_stress_conf = None
+            if batt_stress_conf and batt_stress_conf["active"]:
+                self.vars["batt_stress_cost"] = batt_stress_conf["vars"]
 
-            if self.optim_conf["set_use_battery"]:
-                p_batt_max = max(
-                    self.plant_conf.get("battery_discharge_power_max", 0),
-                    self.plant_conf.get("battery_charge_power_max", 0),
-                )
-                batt_stress_conf = self._setup_stress_cost(
-                    "battery_stress_cost", p_batt_max, "battery"
-                )
-                if batt_stress_conf["active"]:
-                    self.vars["batt_stress_cost"] = batt_stress_conf["vars"]
-
-            if self.plant_conf["inverter_is_hybrid"]:
-                P_nom_inverter_max = max(
-                    self.plant_conf.get("inverter_ac_output_max", 0),
-                    self.plant_conf.get("inverter_ac_input_max", 0),
-                )
-                inv_stress_conf = self._setup_stress_cost(
-                    "inverter_stress_cost", P_nom_inverter_max, "inv"
-                )
-                if inv_stress_conf["active"]:
-                    self.vars["inv_stress_cost"] = inv_stress_conf["vars"]
+            if inv_stress_conf and inv_stress_conf["active"]:
+                self.vars["inv_stress_cost"] = inv_stress_conf["vars"]
 
             # Add Constraints
             self._add_main_power_balance_constraints(constraints)
